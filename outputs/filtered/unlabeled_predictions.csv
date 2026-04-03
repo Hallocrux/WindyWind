@@ -1,0 +1,2 @@
+﻿case_id,file_name,predicted_wind_speed,model_name,feature_set,selection_reason,best_overall_model_name,best_overall_feature_set
+2,工况2.csv,3.007825813874337,Ridge,VIB_FT,全局最优模型需要 rpm 特征，但无标签工况缺少 rpm，因此回退到最佳 rpm-free 模型。,LinearRegression,RPM_ONLY
