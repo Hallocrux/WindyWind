@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-import re
 
 import numpy as np
 import pandas as pd
 
 DEFAULT_DATA_DIR = Path("data/final/datasets")
+DEFAULT_MANIFEST_PATH = Path("data/final/dataset_manifest.csv")
 TIME_COLUMN = "time"
 QUALITY_COLUMNS = {
     "__row_missing_count",
@@ -20,20 +20,29 @@ INVALID_COLUMNS = {
     "WSMS00005.AccY",
     "WSMS00005.AccZ",
 }
-CASE_ID_RE = re.compile(r"工况(?P<id>\d+)")
-LABEL_RE = re.compile(
-    r"工况(?P<id>\d+).*?风速(?P<ws>[0-9.]+)ms[,，]转速(?P<rpm>[0-9.]+)rpm"
-)
+MANIFEST_COLUMNS = {
+    "case_id",
+    "display_name",
+    "wind_speed",
+    "rpm",
+    "original_file_name",
+    "label_source",
+    "notes",
+}
 
 
 @dataclass(frozen=True)
 class DatasetRecord:
     case_id: int
+    display_name: str
     file_name: str
     file_path: Path
     wind_speed: float | None
     rpm: float | None
     is_labeled: bool
+    original_file_name: str
+    label_source: str
+    notes: str
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -41,36 +50,28 @@ class DatasetRecord:
         return payload
 
 
-def parse_dataset_record(path: Path) -> DatasetRecord:
-    case_match = CASE_ID_RE.search(path.stem)
-    if case_match is None:
-        raise ValueError(f"无法从文件名解析工况编号: {path.name}")
+def scan_dataset_records(
+    data_dir: Path = DEFAULT_DATA_DIR,
+    manifest_path: Path = DEFAULT_MANIFEST_PATH,
+) -> list[DatasetRecord]:
+    manifest_df = _read_manifest(manifest_path)
+    records = [_build_record_from_manifest_row(row, data_dir) for _, row in manifest_df.iterrows()]
+    if not records:
+        raise FileNotFoundError(f"未在 {manifest_path} 找到任何工况记录。")
 
-    label_match = LABEL_RE.search(path.stem)
-    if label_match is None:
-        return DatasetRecord(
-            case_id=int(case_match.group("id")),
-            file_name=path.name,
-            file_path=path,
-            wind_speed=None,
-            rpm=None,
-            is_labeled=False,
+    existing_files = {path.name for path in data_dir.glob("*.csv")}
+    expected_files = {record.file_name for record in records}
+    missing_files = sorted(expected_files - existing_files)
+    unexpected_files = sorted(existing_files - expected_files)
+    if missing_files:
+        raise FileNotFoundError(
+            f"manifest 中声明的标准数据文件不存在: {', '.join(missing_files)}"
+        )
+    if unexpected_files:
+        raise ValueError(
+            f"datasets 目录存在未登记的 CSV 文件: {', '.join(unexpected_files)}"
         )
 
-    return DatasetRecord(
-        case_id=int(label_match.group("id")),
-        file_name=path.name,
-        file_path=path,
-        wind_speed=float(label_match.group("ws")),
-        rpm=float(label_match.group("rpm")),
-        is_labeled=True,
-    )
-
-
-def scan_dataset_records(data_dir: Path = DEFAULT_DATA_DIR) -> list[DatasetRecord]:
-    records = [parse_dataset_record(path) for path in sorted(data_dir.glob("*.csv"))]
-    if not records:
-        raise FileNotFoundError(f"未在 {data_dir} 找到 CSV 数据文件。")
     return records
 
 
@@ -125,6 +126,31 @@ def build_metadata_frame(records: list[DatasetRecord]) -> pd.DataFrame:
     )
 
 
+def build_dataset_inventory(records: list[DatasetRecord]) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for record in records:
+        frame = pd.read_csv(record.file_path)
+        time_stats = _summarize_time_column(frame[TIME_COLUMN]) if TIME_COLUMN in frame.columns else {}
+        rows.append(
+            {
+                "case_id": record.case_id,
+                "file_name": record.file_name,
+                "row_count": int(len(frame)),
+                "column_count": int(len(frame.columns)),
+                "start_time": time_stats.get("start_time"),
+                "end_time": time_stats.get("end_time"),
+                "duration_seconds": time_stats.get("duration_seconds"),
+                "sampling_hz_est": time_stats.get("sampling_hz_est"),
+                "has_invalid_wsms00005": int(any(column in INVALID_COLUMNS for column in frame.columns)),
+            }
+        )
+    return pd.DataFrame(rows).sort_values("case_id").reset_index(drop=True)
+
+
+def standard_case_file_name(case_id: int) -> str:
+    return f"工况{case_id}.csv"
+
+
 def _clean_time_series(series: pd.Series) -> pd.Series:
     text = series.astype(str).str.strip()
     text = text.str.removeprefix('="').str.removeprefix("=")
@@ -147,3 +173,122 @@ def _edge_missing_masks(row_has_missing: pd.Series) -> tuple[np.ndarray, np.ndar
         index -= 1
 
     return leading, trailing
+
+
+def _read_manifest(manifest_path: Path) -> pd.DataFrame:
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"未找到数据 manifest: {manifest_path}")
+
+    manifest_df = pd.read_csv(manifest_path, dtype=str, keep_default_na=False).fillna("")
+    missing_columns = sorted(MANIFEST_COLUMNS - set(manifest_df.columns))
+    if missing_columns:
+        raise ValueError(
+            f"manifest 缺少必要列: {', '.join(missing_columns)}"
+        )
+    if manifest_df.empty:
+        raise ValueError("manifest 为空。")
+
+    duplicated_case_ids = (
+        manifest_df["case_id"].astype(str).str.strip().loc[
+            lambda series: series.duplicated(keep=False)
+        ].tolist()
+    )
+    if duplicated_case_ids:
+        duplicated_text = ", ".join(sorted(set(duplicated_case_ids), key=int))
+        raise ValueError(f"manifest 中存在重复的 case_id: {duplicated_text}")
+
+    manifest_df = manifest_df.copy()
+    manifest_df["case_id"] = manifest_df["case_id"].map(_parse_case_id)
+    manifest_df = manifest_df.sort_values("case_id").reset_index(drop=True)
+    return manifest_df
+
+
+def _build_record_from_manifest_row(row: pd.Series, data_dir: Path) -> DatasetRecord:
+    case_id = int(row["case_id"])
+    display_name = str(row["display_name"]).strip()
+    original_file_name = str(row["original_file_name"]).strip()
+    label_source = str(row["label_source"]).strip()
+    notes = str(row["notes"]).strip()
+    if not display_name:
+        raise ValueError(f"case_id={case_id} 缺少 display_name。")
+    if not original_file_name:
+        raise ValueError(f"case_id={case_id} 缺少 original_file_name。")
+    if not label_source:
+        raise ValueError(f"case_id={case_id} 缺少 label_source。")
+
+    wind_speed = _parse_optional_float(row["wind_speed"], column_name="wind_speed", case_id=case_id)
+    rpm = _parse_optional_float(row["rpm"], column_name="rpm", case_id=case_id)
+    file_name = standard_case_file_name(case_id)
+    return DatasetRecord(
+        case_id=case_id,
+        display_name=display_name,
+        file_name=file_name,
+        file_path=data_dir / file_name,
+        wind_speed=wind_speed,
+        rpm=rpm,
+        is_labeled=wind_speed is not None and rpm is not None,
+        original_file_name=original_file_name,
+        label_source=label_source,
+        notes=notes,
+    )
+
+
+def _parse_case_id(value: object) -> int:
+    text = str(value).strip()
+    if not text:
+        raise ValueError("manifest 存在空的 case_id。")
+    try:
+        case_id = int(text)
+    except ValueError as exc:
+        raise ValueError(f"manifest 中存在无法解析的 case_id: {text}") from exc
+    if case_id <= 0:
+        raise ValueError(f"case_id 必须为正整数，当前为: {case_id}")
+    return case_id
+
+
+def _parse_optional_float(
+    value: object,
+    *,
+    column_name: str,
+    case_id: int,
+) -> float | None:
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError as exc:
+        raise ValueError(
+            f"case_id={case_id} 的 {column_name} 不是合法数字: {text}"
+        ) from exc
+
+
+def _summarize_time_column(series: pd.Series) -> dict[str, object]:
+    cleaned_time = _clean_time_series(series)
+    parsed = pd.to_datetime(cleaned_time, errors="coerce")
+    parsed = parsed.dropna().sort_values().drop_duplicates().reset_index(drop=True)
+    if parsed.empty:
+        return {
+            "start_time": pd.NaT,
+            "end_time": pd.NaT,
+            "duration_seconds": np.nan,
+            "sampling_hz_est": np.nan,
+        }
+
+    duration_seconds = 0.0
+    sampling_hz_est = np.nan
+    if len(parsed) >= 2:
+        diffs = parsed.diff().dt.total_seconds().dropna()
+        positive_diffs = diffs[diffs > 0]
+        if not positive_diffs.empty:
+            interval = float(positive_diffs.mode().iloc[0])
+            if interval > 0:
+                sampling_hz_est = 1.0 / interval
+        duration_seconds = float((parsed.iloc[-1] - parsed.iloc[0]).total_seconds())
+
+    return {
+        "start_time": parsed.iloc[0],
+        "end_time": parsed.iloc[-1],
+        "duration_seconds": duration_seconds,
+        "sampling_hz_est": sampling_hz_est,
+    }

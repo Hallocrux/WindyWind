@@ -1,0 +1,16 @@
+version: 1
+
+sources:
+  - id: run01
+    video: "data/video/VID_20260330_162635.mp4"
+
+selectors:
+  - kind: window
+    source: run01
+    center: 2000
+    before: 25
+    after: 25
+    step: 1
+    role: anchor
+    group: seg_01
+    note: test

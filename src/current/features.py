@@ -40,44 +40,49 @@ def build_case_feature_frame(
         for column in signal_df.columns
         if column not in {TIME_COLUMN, *QUALITY_COLUMNS}
     ]
-    total_rows = len(signal_df)
     rows: list[dict[str, float | int | str | pd.Timestamp | None]] = []
 
-    for start in range(0, total_rows - config.window_size + 1, config.step_size):
-        end = start + config.window_size
-        window = signal_df.iloc[start:end]
+    for _, segment_df in signal_df.groupby("__segment_id", sort=True):
+        total_rows = len(segment_df)
+        if total_rows < config.window_size:
+            continue
 
-        feature_row: dict[str, float | int | str | pd.Timestamp | None] = {
-            "case_id": record.case_id,
-            "file_name": record.file_name,
-            "window_index": len(rows),
-            "start_time": window[TIME_COLUMN].iloc[0],
-            "end_time": window[TIME_COLUMN].iloc[-1],
-            "wind_speed": record.wind_speed,
-            "rpm": record.rpm,
-            "raw_missing_ratio": float(
-                window["__row_missing_count"].sum()
-                / (config.window_size * len(numeric_columns))
-            ),
-            "raw_missing_rows": int(window["__row_has_missing"].sum()),
-            "touches_leading_missing": int(window["__in_leading_missing_block"].any()),
-            "touches_trailing_missing": int(window["__in_trailing_missing_block"].any()),
-        }
+        segment_df = segment_df.reset_index(drop=True)
+        for start in range(0, total_rows - config.window_size + 1, config.step_size):
+            end = start + config.window_size
+            window = segment_df.iloc[start:end]
 
-        for column in numeric_columns:
-            feature_row.update(
-                _extract_channel_features(
-                    window[column].to_numpy(dtype=float, copy=False),
-                    column,
-                    config.sampling_rate,
+            feature_row: dict[str, float | int | str | pd.Timestamp | None] = {
+                "case_id": record.case_id,
+                "file_name": record.file_name,
+                "window_index": len(rows),
+                "start_time": window[TIME_COLUMN].iloc[0],
+                "end_time": window[TIME_COLUMN].iloc[-1],
+                "wind_speed": record.wind_speed,
+                "rpm": record.rpm,
+                "raw_missing_ratio": float(
+                    window["__row_missing_count"].sum()
+                    / (config.window_size * len(numeric_columns))
+                ),
+                "raw_missing_rows": int(window["__row_has_missing"].sum()),
+                "touches_leading_missing": int(window["__in_leading_missing_block"].any()),
+                "touches_trailing_missing": int(window["__in_trailing_missing_block"].any()),
+            }
+
+            for column in numeric_columns:
+                feature_row.update(
+                    _extract_channel_features(
+                        window[column].to_numpy(dtype=float, copy=False),
+                        column,
+                        config.sampling_rate,
+                    )
                 )
-            )
 
-        rows.append(feature_row)
+            rows.append(feature_row)
 
     if not rows:
         raise ValueError(
-            f"{record.file_name} 行数不足以切出窗口，当前行数={total_rows}。"
+            f"{record.file_name} 无足够长连续段可切出窗口，当前窗口长度={config.window_size}。"
         )
 
     return pd.DataFrame(rows)

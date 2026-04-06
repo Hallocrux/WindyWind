@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
 
 from .data_quality import (
@@ -10,6 +8,7 @@ from .data_quality import (
     save_data_quality_report,
 )
 from .data_loading import (
+    build_dataset_inventory,
     build_metadata_frame,
     get_common_signal_columns,
     load_clean_signal_frame,
@@ -27,8 +26,10 @@ def main() -> None:
     records = scan_dataset_records()
     common_signal_columns = get_common_signal_columns(records)
     metadata = build_metadata_frame(records)
+    inventory = build_dataset_inventory(records)
     quality_case_df, quality_missing_df = build_data_quality_report(records=records)
     save_data_quality_report(quality_case_df, quality_missing_df)
+    inventory.to_csv("outputs/dataset_inventory.csv", index=False, encoding="utf-8-sig")
 
     window_config = WindowConfig()
     feature_frames = []
@@ -42,14 +43,6 @@ def main() -> None:
     results = run_model_comparison(feature_df)
     save_outputs(results)
 
-    filtered_feature_df = feature_df[
-        (feature_df["raw_missing_ratio"] == 0.0)
-        & (feature_df["touches_leading_missing"] == 0)
-        & (feature_df["touches_trailing_missing"] == 0)
-    ].reset_index(drop=True)
-    filtered_results = run_model_comparison(filtered_feature_df)
-    save_outputs(filtered_results, output_dir=Path("outputs/filtered"))
-
     print("数据概览:")
     print(
         metadata[
@@ -60,8 +53,4 @@ def main() -> None:
     print("数据质量概览:")
     print(format_quality_summary(quality_case_df))
     print()
-    print("原始窗口实验:")
     print(format_console_summary(results))
-    print()
-    print("过滤缺失窗口后实验:")
-    print(format_console_summary(filtered_results))

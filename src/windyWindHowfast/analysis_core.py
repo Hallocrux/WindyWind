@@ -87,6 +87,65 @@ def analyze_spatiotemporal_frequency(
     )
 
 
+def extract_top_spectrum_peaks(
+    spectrum_mag: np.ndarray,
+    temporal_freqs: np.ndarray,
+    spatial_modes: np.ndarray,
+    *,
+    min_temporal_hz: float = 0.2,
+    max_temporal_hz: float = 20.0,
+    max_spatial_mode: int = 24,
+    top_n: int = 10,
+) -> list[dict[str, float | int]]:
+    temporal_mask = (temporal_freqs >= min_temporal_hz) & (temporal_freqs <= max_temporal_hz)
+    spatial_mask = (np.abs(spatial_modes) >= 1) & (np.abs(spatial_modes) <= max_spatial_mode)
+    if not np.any(temporal_mask) or not np.any(spatial_mask):
+        return []
+
+    search_mag = spectrum_mag[np.ix_(temporal_mask, spatial_mask)]
+    masked_temporal = temporal_freqs[temporal_mask]
+    masked_spatial = spatial_modes[spatial_mask]
+    flat = search_mag.ravel()
+    if flat.size == 0:
+        return []
+
+    top_n = max(1, min(int(top_n), flat.size))
+    top_indices = np.argpartition(flat, -top_n)[-top_n:]
+    top_indices = top_indices[np.argsort(flat[top_indices])[::-1]]
+
+    peaks: list[dict[str, float | int]] = []
+    for rank, flat_idx in enumerate(top_indices, start=1):
+        time_idx, mode_idx = np.unravel_index(int(flat_idx), search_mag.shape)
+        temporal_hz = float(masked_temporal[time_idx])
+        spatial_mode = int(round(float(masked_spatial[mode_idx])))
+        magnitude = float(search_mag[time_idx, mode_idx])
+        rpm = abs(temporal_hz / spatial_mode) * 60.0
+        peaks.append(
+            {
+                "rank": rank,
+                "temporal_hz": temporal_hz,
+                "spatial_mode_k": spatial_mode,
+                "magnitude": magnitude,
+                "rpm": rpm,
+            }
+        )
+    return peaks
+
+
+def select_preferred_peak(
+    peaks: list[dict[str, float | int]],
+    *,
+    preferred_abs_k: tuple[int, ...] = (3,),
+) -> dict[str, float | int] | None:
+    if not peaks:
+        return None
+    for abs_k in preferred_abs_k:
+        candidates = [peak for peak in peaks if abs(int(peak["spatial_mode_k"])) == abs_k]
+        if candidates:
+            return max(candidates, key=lambda peak: float(peak["magnitude"]))
+    return peaks[0]
+
+
 def resolve_video_path(video_arg: str | None) -> Path:
     if video_arg:
         video_path = Path(video_arg)
@@ -183,6 +242,8 @@ __all__ = [
     "DEFAULT_ANGULAR_RESOLUTION",
     "build_angle_profile",
     "analyze_spatiotemporal_frequency",
+    "extract_top_spectrum_peaks",
+    "select_preferred_peak",
     "resolve_video_path",
     "resolve_output_dir",
     "render_summary_figure",

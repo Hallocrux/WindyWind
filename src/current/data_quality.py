@@ -6,7 +6,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .data_loading import DatasetRecord, get_common_signal_columns, scan_dataset_records
+from .data_loading import (
+    CleaningConfig,
+    DatasetRecord,
+    get_common_signal_columns,
+    prepare_clean_signal_frame,
+    scan_dataset_records,
+)
 from .features import WindowConfig
 
 QUALITY_OUTPUT_DIR = Path("outputs")
@@ -23,6 +29,7 @@ def build_data_quality_report(
     records: list[DatasetRecord] | None = None,
     window_config: WindowConfig | None = None,
     quality_config: QualityConfig | None = None,
+    cleaning_config: CleaningConfig | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     if records is None:
         records = scan_dataset_records()
@@ -30,6 +37,8 @@ def build_data_quality_report(
         window_config = WindowConfig()
     if quality_config is None:
         quality_config = QualityConfig()
+    if cleaning_config is None:
+        cleaning_config = CleaningConfig()
 
     common_columns = get_common_signal_columns(records)
     case_rows: list[dict[str, object]] = []
@@ -41,6 +50,17 @@ def build_data_quality_report(
         row_missing = numeric.isna().any(axis=1)
         missing_blocks = _collect_missing_blocks(row_missing.to_numpy())
         top_missing = numeric.isna().sum().sort_values(ascending=False)
+        cleaned_signal, cleaning_stats = prepare_clean_signal_frame(
+            record=record,
+            common_signal_columns=common_columns,
+            cleaning_config=cleaning_config,
+        )
+        window_stats = _summarize_clean_windows(
+            cleaned_signal=cleaned_signal,
+            common_signal_columns=common_columns,
+            window_config=window_config,
+            heavy_missing_window_ratio=quality_config.heavy_missing_window_ratio,
+        )
 
         case_rows.append(
             {
@@ -53,20 +73,20 @@ def build_data_quality_report(
                 "rows_with_missing": int(row_missing.sum()),
                 "missing_block_count": len(missing_blocks),
                 "max_missing_block_len": max((block["length"] for block in missing_blocks), default=0),
-                "leading_missing_len": missing_blocks[0]["length"] if missing_blocks and missing_blocks[0]["start"] == 0 else 0,
-                "trailing_missing_len": missing_blocks[-1]["length"] if missing_blocks and missing_blocks[-1]["end"] == len(raw) - 1 else 0,
-                "windows_total": _count_windows(len(raw), window_config),
-                "windows_with_missing": _count_windows_with_missing(
-                    numeric,
-                    window_config,
-                    min_missing_ratio=0.0,
-                ),
-                "windows_with_heavy_missing": _count_windows_with_missing(
-                    numeric,
-                    window_config,
-                    min_missing_ratio=quality_config.heavy_missing_window_ratio,
-                ),
-                "worst_window_missing_ratio": _worst_window_missing_ratio(numeric, window_config),
+                "leading_missing_len": cleaning_stats.leading_missing_len,
+                "trailing_missing_len": cleaning_stats.trailing_missing_len,
+                "edge_removed_rows": cleaning_stats.edge_removed_rows,
+                "edge_removed_ratio": float(cleaning_stats.edge_removed_rows / len(raw)),
+                "rows_after_edge_drop": cleaning_stats.rows_after_edge_drop,
+                "rows_after_edge_drop_ratio": float(cleaning_stats.rows_after_edge_drop / len(raw)),
+                "internal_short_gap_rows": cleaning_stats.internal_short_gap_rows,
+                "internal_long_gap_rows_dropped": cleaning_stats.internal_long_gap_rows_dropped,
+                "continuous_segment_count": cleaning_stats.continuous_segment_count,
+                "rows_after_long_gap_drop": cleaning_stats.rows_after_long_gap_drop,
+                "windows_total": window_stats["windows_total"],
+                "windows_with_missing": window_stats["windows_with_missing"],
+                "windows_with_heavy_missing": window_stats["windows_with_heavy_missing"],
+                "worst_window_missing_ratio": window_stats["worst_window_missing_ratio"],
                 "long_gap_column_count": _count_long_gap_columns(
                     numeric,
                     threshold=quality_config.long_gap_threshold,
@@ -109,14 +129,19 @@ def save_data_quality_report(
 def format_quality_summary(case_df: pd.DataFrame) -> str:
     total_cases = int(len(case_df))
     avg_missing_ratio = float(case_df["missing_ratio_in_common_cols"].mean())
+    avg_edge_removed_ratio = float(case_df["edge_removed_ratio"].mean())
     max_missing_ratio_row = case_df.sort_values("missing_ratio_in_common_cols", ascending=False).iloc[0]
     max_block_row = case_df.sort_values("max_missing_block_len", ascending=False).iloc[0]
-    window_dirty_ratio = float(case_df["windows_with_missing"].sum() / case_df["windows_total"].sum())
+    total_windows = int(case_df["windows_total"].sum())
+    window_dirty_ratio = 0.0
+    if total_windows > 0:
+        window_dirty_ratio = float(case_df["windows_with_missing"].sum() / total_windows)
 
     return "\n".join(
         [
             f"工况数: {total_cases}",
             f"平均缺失率(共有通道): {avg_missing_ratio:.4%}",
+            f"平均首尾连续缺失删除比例: {avg_edge_removed_ratio:.4%}",
             f"最高缺失率工况: 工况{int(max_missing_ratio_row['case_id'])} ({max_missing_ratio_row['missing_ratio_in_common_cols']:.4%})",
             f"最长连续缺失段: 工况{int(max_block_row['case_id'])} ({int(max_block_row['max_missing_block_len'])} 点)",
             f"受缺失影响窗口占比: {window_dirty_ratio:.4%}",
@@ -139,35 +164,39 @@ def _collect_missing_blocks(mask: np.ndarray) -> list[dict[str, int]]:
     return blocks
 
 
-def _count_windows(total_rows: int, config: WindowConfig) -> int:
-    if total_rows < config.window_size:
-        return 0
-    return 1 + (total_rows - config.window_size) // config.step_size
+def _summarize_clean_windows(
+    cleaned_signal: pd.DataFrame,
+    common_signal_columns: list[str],
+    window_config: WindowConfig,
+    heavy_missing_window_ratio: float,
+) -> dict[str, float | int]:
+    windows_total = 0
+    windows_with_missing = 0
+    windows_with_heavy_missing = 0
+    worst_window_missing_ratio = 0.0
+    total_values = window_config.window_size * len(common_signal_columns)
 
+    for _, segment_df in cleaned_signal.groupby("__segment_id", sort=True):
+        segment_df = segment_df.reset_index(drop=True)
+        if len(segment_df) < window_config.window_size:
+            continue
 
-def _count_windows_with_missing(
-    numeric: pd.DataFrame,
-    config: WindowConfig,
-    min_missing_ratio: float,
-) -> int:
-    count = 0
-    total_values = config.window_size * numeric.shape[1]
-    for start in range(0, len(numeric) - config.window_size + 1, config.step_size):
-        window = numeric.iloc[start : start + config.window_size]
-        missing_ratio = float(window.isna().sum().sum() / total_values)
-        if missing_ratio > min_missing_ratio:
-            count += 1
-    return count
+        for start in range(0, len(segment_df) - window_config.window_size + 1, window_config.step_size):
+            window = segment_df.iloc[start : start + window_config.window_size]
+            missing_ratio = float(window["__row_missing_count"].sum() / total_values)
+            windows_total += 1
+            if missing_ratio > 0.0:
+                windows_with_missing += 1
+            if missing_ratio > heavy_missing_window_ratio:
+                windows_with_heavy_missing += 1
+            worst_window_missing_ratio = max(worst_window_missing_ratio, missing_ratio)
 
-
-def _worst_window_missing_ratio(numeric: pd.DataFrame, config: WindowConfig) -> float:
-    worst_ratio = 0.0
-    total_values = config.window_size * numeric.shape[1]
-    for start in range(0, len(numeric) - config.window_size + 1, config.step_size):
-        window = numeric.iloc[start : start + config.window_size]
-        missing_ratio = float(window.isna().sum().sum() / total_values)
-        worst_ratio = max(worst_ratio, missing_ratio)
-    return worst_ratio
+    return {
+        "windows_total": windows_total,
+        "windows_with_missing": windows_with_missing,
+        "windows_with_heavy_missing": windows_with_heavy_missing,
+        "worst_window_missing_ratio": worst_window_missing_ratio,
+    }
 
 
 def _count_long_gap_columns(numeric: pd.DataFrame, threshold: int) -> int:

@@ -1,33 +1,74 @@
 # windywind
 
-这个 README 面向项目使用者，默认假设读者只有基础 ML 常识。
+这个 README 面向项目使用者，只保留当前已经可用的功能、运行方式、输入输出位置和已确认限制。详细设计、路线规划和方法讲解见 `Docs/`。
 
-## 项目在做什么
+## 当前已实现的内容
 
-- 任务 1：对每条时程数据做基础统计分析，例如最大值、平均值、标准差。
-- 任务 2：基于振动时程数据和转速，预测入流风速。
-- 任务 3：基于振动时程数据识别结构基频。
+- 表格主线：
+  - 读取 `data/final/dataset_manifest.csv` 与 `data/final/datasets/工况*.csv`
+  - 默认先删除首尾连续缺失段；中间连续缺失 `<=5` 行时线性插值，`>5` 行时直接删除并分段
+  - 只在连续段内部按固定窗口切分时序
+  - 提取时域/频域特征
+  - 做按工况留一验证的风速回归实验
+  - 输出默认清洗口径下的实验结果、数据质量报告和自动派生 inventory
+- TinyTCN baseline：
+  - 在 `src/Baseline_TinyTCN/` 中提供独立的 TinyTCN baseline 入口
+  - 复用当前 `50Hz / 5s / 2.5s` 的切窗口径
+  - 按工况留一评估，并输出无标签工况预测
+- 视频主线：
+  - 在 `src/windyWindHowfast/` 中提供独立的视频转速分析 CLI
+  - 当前方法是极坐标展开 + `time-angle` 二维频谱
+  - 保留完整视频管线：ROI -> RPM
+- 标注主线：
+  - 在 `src/windNotFound/` 中提供独立的手工标注与 21 点 RPM 拟合工具
+  - 用 YAML 定义待标注帧
+  - 以 `jsonl` 追加写入标注结果
+  - 基于 `center -> blade_1` 角度直接拟合 selector 级 RPM
 
-当前仓库已经实现了任务 2 的第一轮可复现实验链路：
+## 表格实验怎么运行
 
-- 读入并清洗 `data/final/datasets/*.csv`
-- 按 `5s` 窗长、`2.5s` 步长切窗口
-- 对每个窗口提取时域和频域特征
-- 用传统机器学习回归模型做按工况留一验证
+主入口是根目录 `main.py`。
 
-另外，仓库中现在还包含一个独立的视频转速分析子模块：
+```bash
+uv run python main.py
+```
 
-- 代码位置：`src/windyWindHowfast/`
-- 视频位置：`data/video/`
-- 目标：从风机视频中估计叶轮转速
-- 当前方法：极坐标展开 + 时空二维频谱
-- 当前 ROI 获取：候选生成 + 统一评分 + 选择与回退
+运行后会在 `outputs/` 下写出实验结果。
 
-这个视频模块不属于当前 `main.py` 的默认执行链路，需要单独运行。
+当前已确认的表格侧事实：
 
-## 视频转速模块怎么用
+- 输入主数据由 `data/final/dataset_manifest.csv` 与 `data/final/datasets/工况*.csv` 共同组织
+- 当前共有 20 个工况文件
+- 其中 19 个工况在 manifest 中带有风速和转速标签
+- `工况2.csv` 无标签，不参与监督训练
+- CSV 文件名只保留工况编号，风速、转速、显示名和备注统一由 manifest 管理
+- 宽表主采样间隔约为 `0.02s`，即 `50Hz`
+- 已知 `WSMS00005.*` 为错误加速度数据，清洗时应忽略
+- 当前默认清洗会删除首尾连续缺失段；中间连续缺失 `<=5` 行时线性插值，`>5` 行时直接删除并切成连续段
 
-### 运行命令
+运行后当前会写出：
+
+- `outputs/model_summary.csv`
+- `outputs/case_level_predictions.csv`
+- `outputs/window_level_predictions.csv`
+- `outputs/unlabeled_predictions.csv`
+- `outputs/data_quality_summary.csv`
+- `outputs/data_quality_missing_columns.csv`
+- `outputs/dataset_inventory.csv`
+
+当前已完成的 TinyTCN baseline 运行方式：
+
+```bash
+uv run python -m src.Baseline_TinyTCN
+```
+
+当前 baseline 输出位置：
+
+- `outputs/Baseline_TinyTCN/model_summary.csv`
+- `outputs/Baseline_TinyTCN/case_level_predictions.csv`
+- `outputs/Baseline_TinyTCN/unlabeled_predictions.csv`
+
+## 视频转速模块怎么运行
 
 默认读取 `data/video/` 下的第一个 `mp4`：
 
@@ -41,16 +82,7 @@ uv run python -m src.windyWindHowfast
 uv run python -m src.windyWindHowfast --video data/video/VID_20260330_162635.mp4
 ```
 
-只测试自动 ROI，不允许失败后回退到手动：
-
-```bash
-uv run python -m src.windyWindHowfast \
-  --video data/video/VID_20260330_162635.mp4 \
-  --no-interactive \
-  --no-show
-```
-
-显式指定 ROI 时，会跳过自动候选框架：
+显式指定 ROI：
 
 ```bash
 uv run python -m src.windyWindHowfast \
@@ -60,246 +92,90 @@ uv run python -m src.windyWindHowfast \
   --radius 230
 ```
 
-### 交互步骤与输出
+每次运行默认把结果写到：
 
-1. 若未显式提供 ROI，程序会先尝试自动 ROI。
-2. 自动 ROI 失败且允许交互时，才会回退到手动点选。
-3. 程序会处理整段视频，并显示：
-   - 时间-角度结构图
-   - 极坐标边缘图
-   - 去掉全局强度项后的处理图
-   - 时间频率与角向模态的二维频谱图
-4. 每次运行都会把结果写到 `outputs/windyWindHowfast/<视频名>/`，包括：
-   - 候选级 ROI debug 文件
-   - 最终检测结果 `*_roi_detection.json`
-   - 分析结果 `*_analysis_result.json`
-   - 最终 ROI 预览图 `*_first_frame_with_roi.png`
+- `outputs/windyWindHowfast/<video_stem>/`
 
-### 这版方法和早期 FFT 脚本的关键区别
+当前常见工件包括：
 
-- 早期错误做法是把整圈角度平均掉，只剩一个“全局强度随时间变化”的信号。
-- 当前版本保留了角度信息，把叶片旋转视为“角度轴上的结构平移”。
-- 最终不是在单一强度曲线上找频率，而是在完整的 `time-angle` 图上做二维频谱分析。
-- 这样可以更稳地利用叶片的空间结构，而不是被整体亮度变化带偏。
+- `*_roi_candidates.json`
+- `*_roi_detection.json`
+- `*_analysis_result.json`
+- `*_analysis_summary.png`
+- `*_first_frame_with_roi.png`
+- `*_roi.json`
 
-### 当前要注意什么
+当前已确认的限制：
 
-- 当前自动 ROI 是可扩展框架，不是样本硬编码规则。
-- 现在默认启用 `motion` 和 `static_structure` 两类 generator。
-- 后续如果要接 YOLO / keypoint / segmentation，不需要推翻现有结构，只要新增 generator 并接入统一评分即可。
-- 频谱分析主链没有在这一轮修改，因此当前数值结果仍应结合 ROI debug 与频谱图一起判断。
-- 对当前样例 `VID_20260330_162635`，自动 ROI 已确认存在一个具体问题：
-  - 它容易把“右上叶片附近的局部高运动圆”当成整个风轮 ROI
-  - 当前不是简单调高 `--roi-score-threshold` 就能修好，因为错误候选本身就是当前评分里的第一名
-  - 这说明后续重点应放在更接近“轮毂中心”的候选生成和几何约束，而不是只继续调分数阈值
+- 自动 ROI 在样例 `VID_20260330_162635.mp4` 上已确认会选错到叶片附近的局部高运动圆，而不是轮毂附近的正确 ROI。
+- 当前视频 RPM 数值仍需要结合 ROI debug 与频谱图一起判断，不应把单次输出直接当成稳定真值。
 
-### 已有一次自动 ROI 失败诊断探索
+## 手工标注与 21 点 RPM 拟合怎么运行
 
-- 探索目录：`src/try/002_auto_roi_failure_analysis/`
-- 目标：量化分析 `VID_20260330_162635` 上自动 ROI 的失败原因
-- 运行：
+标注：
 
-```powershell
-uv run python src/try/002_auto_roi_failure_analysis/analyze_auto_roi_failure.py
+```bash
+uv run python src/windNotFound/run_annotate.py --task config/test.yaml
 ```
 
-- 输出：
-  - `outputs/try/002_auto_roi_failure_analysis/candidate_summary.csv`
-  - `outputs/try/002_auto_roi_failure_analysis/top_candidates_overlay.png`
-  - `outputs/try/002_auto_roi_failure_analysis/summary.md`
+当前任务 YAML 只定义帧选择，支持的 selector：
 
-## 第一轮实验的方法拆解
+- `window`
+- `range`
+- `explicit`
 
-### 整体思路
+每个任务自动写到：
 
-- 这轮实验不是“每个工况只做一个样本”，而是：
-  - 先把每个工况的连续时序切成很多个 `5s` 小窗口
-  - 再把每个窗口提成一个表格样本
-  - 最后用传统机器学习回归模型预测该窗口所属工况的风速
-- 因为一个工况内所有窗口共享同一个风速标签，所以这是一个“工况级标签，窗口级训练样本”的设定。
-- 最终评估时，不直接看窗口误差，而是先把同一工况内所有窗口预测取平均，再和真实风速比较，这样得到 `case_mae`。
+- `outputs/annotations/<task_stem>/annotations.jsonl`
+- `outputs/annotations/<task_stem>/summary.json`
 
-### 数据进入模型前做了什么
+当前固定标注顺序：
 
-- 数据来源是 `data/final/datasets/*.csv` 宽表。
-- 文件名中可解析出：
-  - `case_id`
-  - `wind_speed`
-  - `rpm`
-- `工况2.csv` 没有标签，所以只做最终推理，不参与训练和验证。
-- 所有工况先取“共有有效传感器列”作为输入通道：
-  - 自动丢弃已知错误的 `WSMS00005.AccX/Y/Z`
-  - 只保留所有工况都共同拥有的列
-- 时间和数值清洗规则：
-  - 清理 `time` 文本格式
-  - 转成时间戳
-  - 按时间排序
-  - 按时间去重
-  - 数值列转成数值类型
-  - 用线性插值 + 前向/后向填充处理缺失值
-- 本轮最终保留了 `20` 个共同信号通道。
+1. `support_a`
+2. `support_b`
+3. `center`
+4. `blade_1`
+5. `blade_2`
+6. `blade_3`
 
-### 怎么切窗口
+其中：
 
-- 采样率假设为 `50Hz`。
-- 每个窗口长度 `250` 点，即 `5s`。
-- 窗口步长 `125` 点，即 `2.5s`。
-- 这意味着相邻窗口有一半重叠。
-- 这样做的直觉是：
-  - 一个窗口太短，统计量和频谱不稳定
-  - 一个窗口太长，样本数会太少
-  - `5s` 是一个折中方案
-- 14 个工况一共切出了 `577` 个窗口，其中各工况窗口数为：
-  - 工况1: `25`
-  - 工况2: `29`
-  - 工况3: `29`
-  - 工况4: `60`
-  - 工况5: `46`
-  - 工况6: `43`
-  - 工况7: `33`
-  - 工况8: `35`
-  - 工况9: `45`
-  - 工况10: `53`
-  - 工况11: `32`
-  - 工况12: `44`
-  - 工况13: `65`
-  - 工况14: `38`
+- `blade_1` 必须是带 marker 的扇叶
+- `blade_2`、`blade_3` 需要按顺时针
 
-### 每个窗口提了什么特征
+当前已确认的标注侧事实：
 
-- 对每个信号通道，都提两类特征：
-  - 时域特征
-  - 频域特征
-- 时域特征包括：
-  - 均值 `mean`
-  - 标准差 `std`
-  - 最小值 `min`
-  - 最大值 `max`
-  - 峰峰值 `ptp = max - min`
-  - 均方根 `rms`
-- 频域特征通过 FFT 提取，包括：
-  - 主峰频率 `fft_peak_freq`
-  - 主峰幅值 `fft_peak_amp`
-  - 总能量 `fft_total_energy`
-  - 三个频带的能量占比：
-    - `0-2Hz`
-    - `2-5Hz`
-    - `5-10Hz`
-- 每个通道共 `12` 个特征：
-  - `6` 个时域特征
-  - `6` 个频域特征
-- 本轮共有 `20` 个通道，因此纯振动特征总数为 `20 x 12 = 240` 维。
-- 如果再加上 `rpm`，则是 `241` 维。
+- 同一 `task_item_id` 重做时采用 append-only，读取时以最后一条记录为准
+- `summary.json` 当前直接输出 selector 级 RPM 拟合结果
+- 标注窗口提示文案当前统一使用英文
 
-### 三种特征集分别是什么意思
+基于已有标注直接拟合 RPM：
 
-- `RPM_ONLY`
-  - 只用 `rpm` 这一列预测风速
-  - 本质是在问：只靠转速，能不能把风速大致拟合出来
-- `VIB_FT`
-  - 只用振动/应变信号提取出的 `240` 维特征
-  - 本质是在问：不看转速，只靠振动信号能不能预测风速
-- `VIB_FT_RPM`
-  - 用振动特征 + `rpm`
-  - 本质是在问：把振动信息和转速合在一起，能否优于单独使用 rpm
+```bash
+uv run python src/windNotFound/run_fit_rpm.py --task config/test.yaml
+```
 
-### 比较了哪些模型
+用逐帧标注 ROI 验证视频 RPM 算法：
 
-- `LinearRegression`
-  - 只用于 `RPM_ONLY`
-  - 因为单输入特征下，线性关系是否成立最容易先检验
-- `Ridge`
-  - 在线性回归上增加 `L2` 正则化
-  - 适合高维、小样本场景，能稍微抑制过拟合
-- `RandomForestRegressor`
-  - 多棵决策树做平均
-  - 能表示非线性，但小样本下未必稳定
-- `HistGradientBoostingRegressor`
-  - 梯度提升树的一种高效实现
-  - 通常比单纯随机森林更擅长表格型非线性关系
+```bash
+uv run python src/windNotFound/run_eval_video_rpm.py --task config/test.yaml --selector-index 0
+```
 
-### 为什么验证方式必须按工况留一
+## 已完成探索入口
 
-- 这轮实验使用 `Leave-One-Condition-Out`：
-  - 每次拿 `1` 个工况做验证
-  - 其余带标签工况做训练
-  - 重复直到每个带标签工况都被单独验证过一次
-- 原因是同一工况切出来的窗口高度相似。
-- 如果把窗口随机打散到训练集和验证集：
-  - 模型会在训练时见过几乎同分布的数据
-  - 验证分数会虚高
-  - 这属于典型的信息泄漏
-- 按工况留一，才更接近真实场景：
-  - 用已知工况训练
-  - 去预测一个从没见过的新工况
+- `src/try/001_fft_frequency_plot/`
+  - 输出 `outputs/try/001_fft_frequency_plot/`
+- `src/try/002_auto_roi_failure_analysis/`
+  - 输出 `outputs/try/002_auto_roi_failure_analysis/`
+- `src/try/013_phase3_cnn_tcn_smoke/`
+  - 输出 `outputs/try/013_phase3_cnn_tcn_smoke/`
+- `src/try/015_patchtst_loco/`
+  - 输出 `outputs/try/015_patchtst_loco/`
+- `src/try/016_micn_loco/`
+  - 输出 `outputs/try/016_micn_loco/`
+- `src/try/017_samformer_loco/`
+  - 输出 `outputs/try/017_samformer_loco/`
+- `src/try/018_structural_fundamental_frequency_scan/`
+  - 输出 `outputs/try/018_structural_fundamental_frequency_scan/`
 
-### 指标是怎么算的
-
-- 先做窗口级预测：
-  - 每个窗口输出一个预测风速
-- 再做工况级汇总：
-  - 同一工况所有窗口预测取平均，得到该工况的最终预测风速
-- 然后计算：
-  - `case_mae`: 各工况绝对误差的平均值
-  - `case_rmse`: 各工况平方误差均值开根号
-  - `case_mape`: 各工况相对误差百分比平均值
-- 这里最重要的是 `case_mae`，因为最终任务更接近“一个工况输出一个风速”。
-
-### 为什么 rpm-only 反而最好
-
-- 当前数据里，风速和转速显然强相关。
-- 所以只用 `rpm` 这一列，就已经能学到相当强的映射关系。
-- 这说明两件事：
-  - 第一，转速本身是一个非常强的先验特征
-  - 第二，当前振动特征还没有稳定提取出比 rpm 更强的信息
-- 这不代表振动没用，更可能说明：
-  - 现有标签样本太少
-  - 当前手工特征还比较粗
-  - 树模型超参数还没系统调优
-  - 某些振动信息可能被转速“遮蔽”了
-
-### 为什么“振动 + rpm”没有优于“只用 rpm”
-
-- 直觉上，更多特征不一定更好。
-- 在小样本问题中，加入很多噪声特征后，模型可能更容易过拟合。
-- 当前是：
-  - 带标签工况只有 `13` 个
-  - 但振动特征有 `240` 维
-- 这属于典型的“样本少、维度高”。
-- 因此出现下面的现象并不奇怪：
-  - `rpm` 已经足够解释大部分变化
-  - 新增的振动特征没带来足够稳定的增益
-  - 反而让模型学习到一些不稳的模式
-
-### 对无标签工况2为什么不用全局最优模型
-
-- 全局最优模型是 `LinearRegression + RPM_ONLY`。
-- 但 `工况2.csv` 没有 `rpm` 标签。
-- 因此它无法喂给需要 `rpm` 的模型。
-- 所以实际推理时退回到“兼容无 rpm 输入的最佳模型”，即：
-  - `HistGradientBoostingRegressor + VIB_FT`
-- 用它对 `工况2.csv` 预测得到：`3.9253 m/s`
-
-## 给只有 ML 基础的人看的最小概念表
-
-- 样本 `sample`
-  - 训练时送给模型的一行数据
-  - 本项目里，一个“时间窗口”就是一个样本
-- 特征 `feature`
-  - 描述样本的输入变量
-  - 本项目里，例如均值、标准差、主峰频率、rpm
-- 标签 `label`
-  - 监督学习想预测的目标
-  - 本项目里是风速 `wind_speed`
-- 回归 `regression`
-  - 预测连续数值，而不是类别
-- 泛化 `generalization`
-  - 模型在没见过的新工况上还能不能表现好
-- 过拟合 `overfitting`
-  - 模型把训练数据中的偶然模式也记住了，导致新数据表现差
-- 信息泄漏 `data leakage`
-  - 验证集包含了训练阶段不该看到的信息，导致分数虚高
-- 正则化 `regularization`
-  - 给模型加约束，降低过拟合风险
-- FFT
-  - 把时域信号变到频域，用来观察主要振动频率和能量分布
+如果你需要看路线规划、重构想法、方法拆解或详细风险分析，直接阅读 `Docs/`。

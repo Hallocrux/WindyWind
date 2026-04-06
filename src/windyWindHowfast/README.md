@@ -1,6 +1,6 @@
 # windyWindHowfast
 
-视频转速分析子模块，当前采用“极坐标展开 + 时空二维频谱”的方法估计风轮转速。
+视频 ROI -> RPM 分析子模块。
 
 ## 目标
 
@@ -8,9 +8,14 @@
 - 在极坐标空间中，把叶片旋转视为“角度轴上的平移”。
 - 通过时间频率 `f` 与角向模态 `k` 的二维谱峰，反推出转子频率 `f / k`。
 
-## 当前 ROI 框架
+## 当前结构
 
-- 自动 ROI 已改成三层结构：
+- 当前对外只保留视频主链入口：
+  - `main.py`
+  - `roi_detection.py`
+  - `analysis_core.py`
+  - `support.py`
+- 自动 ROI 内部仍采用三层机制：
   - 候选生成 `candidate generators`
   - 统一评分 `candidate scoring`
   - 选择与回退 `selection + fallback`
@@ -30,34 +35,26 @@
 uv run python -m src.windyWindHowfast --video data/video/VID_20260330_162635.mp4
 ```
 
-关闭交互回退，只测试自动 ROI：
-
-```bash
-uv run python -m src.windyWindHowfast \
-  --video data/video/VID_20260330_162635.mp4 \
-  --no-interactive \
-  --no-show \
-  --run-name auto_roi_smoke
-```
-
 显式指定 ROI 时，会跳过自动候选框架：
 
 ```bash
 uv run python -m src.windyWindHowfast \
   --video data/video/VID_20260330_162635.mp4 \
+  --roi-algorithm manual \
   --center-x 455 \
   --center-y 800 \
   --radius 230
 ```
 
+手工标注与 21 点 RPM 拟合已迁移到 `src/windNotFound/`。
+
 ## 关键 CLI 参数
 
-- `--auto-roi / --no-auto-roi`
-- `--interactive / --no-interactive`
+- `--roi-algorithm`
 - `--roi-frame-strategy`
 - `--roi-reference-max-frames`
 - `--roi-score-threshold`
-- `--roi-debug / --no-roi-debug`
+- `--roi-debug`
 - `--roi-json`
 - `--center-x --center-y --radius`
 
