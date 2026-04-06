@@ -2,6 +2,12 @@
 
 视频 ROI -> RPM 分析子模块。
 
+## 当前说明（2026-04-06）
+
+- `data/video/VID_20260330_162635.mp4` 当前按项目口径视为 `工况5` 实录；
+- 这个子模块是当前 `工况5` 视频的 RPM CV 主线；
+- 与该视频配套的手工标注、RPM 拟合和逐帧 ROI 验证位于 `src/windNotFound/`。
+
 ## 目标
 
 - 保留角度维度上的结构信息，不再把整圈角度平均成单一强度信号。
@@ -76,3 +82,17 @@ uv run python -m src.windyWindHowfast \
 - 当前版本是“弱泛化、可扩展”的 ROI 候选框架。
 - 现在主要在仓库已有的室内风机视频上优先测试。
 - 当前重点是把 ROI 获取阶段做成可扩展基础设施，而不是把检测逻辑写死成某个样本的固定规则。
+
+## 相关证据（2026-04-06）
+
+- `config/test.yaml`
+- `outputs/windyWindHowfast/VID_20260330_162635/`
+- `outputs/annotations/test/summary.json`
+- `outputs/annotations/test/video_rpm_eval.json`
+
+## 文档入口（2026-04-06）
+
+- 顶层总览：`Docs/video_pipeline.md`
+- 当前子项目细节：`Docs/video_rpm_cv_pipeline.md`
+- 手工标注资产与验证链：`Docs/video_manual_annotation_assets.md`
+- 详细文档：`Docs/video_rpm_cv_pipeline.md`

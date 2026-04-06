@@ -177,5 +177,9 @@ uv run python src/windNotFound/run_eval_video_rpm.py --task config/test.yaml --s
   - 输出 `outputs/try/017_samformer_loco/`
 - `src/try/018_structural_fundamental_frequency_scan/`
   - 输出 `outputs/try/018_structural_fundamental_frequency_scan/`
+- `src/try/025_tinytcn_boundary_error_check/`
+  - 输出 `outputs/try/025_tinytcn_boundary_error_check/`
+- `src/try/026_tinytcn_priority1_quickcheck/`
+  - 输出 `outputs/try/026_tinytcn_priority1_quickcheck/`
 
 如果你需要看路线规划、重构想法、方法拆解或详细风险分析，直接阅读 `Docs/`。

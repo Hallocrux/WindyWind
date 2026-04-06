@@ -186,15 +186,61 @@
 - 剩余工况存在约 `2.8Hz - 3.6Hz` 的次候选带
 - 结构基频这条线当前应优先继续做“候选频率提取 + 稳定性验证”，而不是直接做监督学习
 
+### 5.8 [2026-04-06] 当前默认样例视频 `VID_20260330_162635.mp4` 对应 `工况5` 实录
+
+- 状态：`current`
+- 数据范围：
+  - `data/video/VID_20260330_162635.mp4`
+  - `data/final/datasets/工况5.csv`
+- 证据入口：
+  - `config/test.yaml`
+  - `outputs/annotations/test/summary.json`
+  - `outputs/annotations/test/video_rpm_eval.json`
+  - `outputs/dataset_inventory.csv`
+
+当前视频子项目口径按以下事实对齐：
+
+- `VID_20260330_162635.mp4` 是 `工况5` 的实录视频；
+- `src/windyWindHowfast/` 是当前 `工况5` 视频的 RPM CV 主线；
+- `src/windNotFound/` 是当前 `工况5` 视频的手工标注、RPM 拟合和视频侧验证主线。
+
+### 5.9 [2026-04-06] 当前 TinyTCN rpm 细窗长 full 最优点落在 `3.0s`
+
+- 状态：`current`
+- 数据范围：manifest 迁移后的 `工况1` 到 `工况20`
+- 代码口径：
+  - `src/try/024_tinytcn_rpm_fine_window_scan/`
+
+当前 `2s-5s` 细窗长 full 扫描结果显示：
+
+- `TinyTCN @ 3.0s`
+  - `case_mae = 5.1863`
+  - `case_rmse = 8.5262`
+- `TinyTCN @ 2.0s`
+  - `case_mae = 7.8917`
+- `TinyTCN @ 2.5s`
+  - `case_mae = 8.0277`
+- `TinyTCN @ 5.0s`
+  - `case_mae = 8.3832`
+
+这说明当前证据更支持“存在中间最优窗长”，而不是“窗口越短越好”。
+
 ## 6. 专题入口
 
 - 数据目录与 manifest：`Docs/data_catalog.md`
 - 表格主线：`Docs/table_pipeline.md`
 - 数据质量与稳定结论：`Docs/data_quality_and_findings.md`
 - 视频 RPM 主线：`Docs/video_pipeline.md`
+- 视频 RPM CV 细节：`Docs/video_rpm_cv_pipeline.md`
+- 视频手工标注资产：`Docs/video_manual_annotation_assets.md`
 - 路线与方法备注：`Docs/project_roadmap_and_method_notes.md`
 - 视频设计备注：`Docs/video_module_design_notes.md`
 - 第三阶段 CNN / TCN full 复核：`Docs/experiments/phase3_cnn_tcn_full_2026-04-05.md`
+- TinyTCN 转速回归探索：`Docs/experiments/tinytcn_rpm_regression_2026-04-06.md`
+- TinyTCN rpm 细窗长扫描：`Docs/experiments/tinytcn_rpm_fine_window_scan_2026-04-06.md`
+- TinyTCN 边界窗口误差检查：`Docs/experiments/tinytcn_boundary_error_check_2026-04-06.md`
+- TinyTCN 第一优先级快速验证：`Docs/experiments/tinytcn_priority1_quickcheck_2026-04-06.md`
+- TinyTCN RPM 与风速窗长对照备注：`Docs/experiments/tinytcn_rpm_vs_wind_window_reference_2026-04-07.md`
 
 ## 7. 关键工程约定
 

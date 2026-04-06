@@ -16,6 +16,10 @@
   - 带时间戳的稳定事实、历史结论、替代关系
 - `video_pipeline.md`
   - 视频 RPM 模块与手工标注子项目的当前状态
+- `video_rpm_cv_pipeline.md`
+  - `windyWindHowfast` 的 RPM CV 主线、输入输出、关键探索入口
+- `video_manual_annotation_assets.md`
+  - `windNotFound` 的手工标注资产、`jsonl` 原始证据、RPM 拟合与验证链
 
 - `project_roadmap_and_method_notes.md`
   - 项目阶段拆分
