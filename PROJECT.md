@@ -225,6 +225,120 @@
 
 这说明当前证据更支持“存在中间最优窗长”，而不是“窗口越短越好”。
 
+### 5.10 [2026-04-07] added 外部失配当前主要由应变侧域偏移驱动
+
+- 状态：`current`
+- 数据范围：
+  - `data/added/` 的 `工况21-24`
+- 代码口径：
+  - `src/try/037_case22_label_and_modality_check/`
+
+当前 added 模态外部对照结果显示：
+
+- `rpm_knn4`
+  - `case_mae = 0.2293`
+- `TinyTCN | full_final_pool | acc_only`
+  - `case_mae = 0.3553`
+- `TinyTCN | clean_final_pool | acc_only`
+  - `case_mae = 0.4362`
+- `TinyTCN | clean_final_pool | all_channels`
+  - `case_mae = 2.0341`
+- `TinyTCN | full_final_pool | strain_only`
+  - `case_mae = 2.3854`
+- `TinyTCN | full_final_pool | all_channels`
+  - `case_mae = 3.2158`
+
+这说明：
+
+- 当前 added 外部高估主要由应变侧输入驱动；
+- 加速度侧单独建模比“全通道直接外推”稳定得多；
+- added 这条线的下一步应优先考虑应变侧域适配与标签证据复核。
+
+### 5.11 [2026-04-07] added 方向上应变高通可显著缓解原始全通道失配
+
+- 状态：`current`
+- 数据范围：
+  - `data/added/` 的 `工况21-24`
+- 代码口径：
+  - `src/try/038_strain_shift_mitigation_check/`
+
+当前 added 应变修复快速验证结果显示：
+
+- `rpm_knn4`
+  - `case_mae = 0.2293`
+- `TinyTCN | full_final_pool | acc_only`
+  - `case_mae = 0.3471`
+- `TinyTCN | full_final_pool | all_channels_raw`
+  - `case_mae = 3.1588`
+- `TinyTCN | full_final_pool | all_channels + strain_highpass_2hz`
+  - `case_mae = 0.4295`
+- `TinyTCN | full_final_pool | all_channels + strain_case_zscore`
+  - `case_mae = 0.4563`
+
+这说明：
+
+- 对应变做 `>2Hz` 高通后，added 外推可以从“明显崩坏”恢复到“可参考”；
+- 当前 added 方向的主要矛盾确实集中在应变侧低频部分；
+- added 这条线后续继续做应变探索时，应优先围绕高通或中频带，而不是恢复到原始全频输入。
+
+### 5.12 [2026-04-07] added 方向上当前最可迁移的应变频带已收敛到约 `3.0-6.0Hz`
+
+- 状态：`current`
+- 数据范围：
+  - `data/added/` 的 `工况21-24`
+- 代码口径：
+  - `src/try/040_midband_strain_weight_scan/`
+
+当前应变频带细扫结果显示：
+
+- `TinyTCN | full_final_pool | strain_bandpass_3.0_6.0hz`
+  - `case_mae = 0.2584`
+  - `case22_abs_error = 0.1324`
+- `TinyTCN | full_final_pool | strain_bandpass_3.0_5.0hz`
+  - `case_mae = 0.2743`
+- `TinyTCN | full_final_pool | acc_only`
+  - `case_mae = 0.4044`
+- `acc_only + strain_bandpass_3.0_6.0hz`
+  - `case_mae = 0.2468`
+- `rpm_knn4`
+  - `case_mae = 0.2293`
+
+这说明：
+
+- added 方向上，当前最有保留价值的应变信息已从粗粒度 `3-6Hz` 收敛到更精确的约 `3.0-6.0Hz`；
+- `3.0-6.0Hz` 中频应变已经优于单独 `acc_only`；
+- 这说明后续继续做 added learned 分支时，应优先围绕 `3.0-6.0Hz` 展开，而不是回到更宽频带。
+
+### 5.13 [2026-04-07] added 方向当前更稳的默认候选为 `rpm_knn4 + learned midband @ learned_weight≈0.3`
+
+- 状态：`current`
+- 数据范围：
+  - `data/added/` 的 `工况21-24`
+- 代码口径：
+  - `src/try/041_rpm_vs_learned_midband_check/`
+  - `src/try/042_rpm_learned_midband_multiseed_stability_check/`
+
+当前 added 单次复核 + 多随机种子复核结果显示：
+
+- `rpm_knn4`
+  - `case_mae = 0.2293`
+- `rpm_knn4 + TinyTCN all_channels midband @ learned_weight=0.3`
+  - `case_mae mean = 0.1627`
+  - `case_mae std = 0.0223`
+  - `better_than_rpm_rate = 1.0`
+- `rpm_knn4 + TinyTCN all_channels midband @ learned_weight=0.5`
+  - `case_mae mean = 0.1822`
+  - `case_mae std = 0.0341`
+  - `better_than_rpm_rate = 0.9`
+  - `case22_abs_error mean = 0.0885`
+
+这说明：
+
+- 当前 added 方向最稳的路线已经确定为“解析基线 + learned 中频分支”的混合方案；
+- `rpm_knn4` 与 `learned midband` 的关系更像互补，而不是替代；
+- 若目标是 `工况21-24` 的整体平均误差，当前默认固定权重应优先参考更稳的 `0.3`；
+- 若目标是尽量修平 `工况22` 这类 hardest case，`0.5` 仍可作为参考权重保留。
+
 ## 6. 专题入口
 
 - 数据目录与 manifest：`Docs/data_catalog.md`
@@ -241,6 +355,21 @@
 - TinyTCN 边界窗口误差检查：`Docs/experiments/tinytcn_boundary_error_check_2026-04-06.md`
 - TinyTCN 第一优先级快速验证：`Docs/experiments/tinytcn_priority1_quickcheck_2026-04-06.md`
 - TinyTCN RPM 与风速窗长对照备注：`Docs/experiments/tinytcn_rpm_vs_wind_window_reference_2026-04-07.md`
+- 双流 TinyTCN 快速验证：`Docs/experiments/dualstream_tinytcn_quickcheck_2026-04-07.md`
+- 输入通道注意力 TinyTCN 快速验证：`Docs/experiments/input_channel_attention_tinytcn_quickcheck_2026-04-07.md`
+- 后卷积通道注意力 TinyTCN 快速验证：`Docs/experiments/postconv_channel_attention_tinytcn_quickcheck_2026-04-07.md`
+- 工况机制聚类探索：`Docs/experiments/case_mechanism_clustering_2026-04-07.md`
+- 工况误差模式聚类探索：`Docs/experiments/case_error_mode_clustering_2026-04-07.md`
+- 机制簇内 / 跨簇泛化快速验证：`Docs/experiments/cluster_generalization_quickcheck_2026-04-07.md`
+- added 外部验证与可疑标签检查：`Docs/experiments/added_validation_label_check_2026-04-07.md`
+- added 外部验证（包含难工况训练池）：`Docs/experiments/added_validation_with_full_final_pool_2026-04-07.md`
+- added 反常表现域诊断：`Docs/experiments/added_domain_diagnosis_2026-04-07.md`
+- 工况22 标签链路与模态外部对照：`Docs/experiments/case22_label_and_modality_check_2026-04-07.md`
+- 应变侧漂移缓解快速验证：`Docs/experiments/strain_shift_mitigation_check_2026-04-07.md`
+- 应变可迁移频带筛选：`Docs/experiments/strain_transfer_band_scan_2026-04-07.md`
+- 中频应变细扫与融合权重验证：`Docs/experiments/midband_strain_weight_scan_2026-04-07.md`
+- 解析基线与 Learned 中频分支复核：`Docs/experiments/rpm_vs_learned_midband_check_2026-04-07.md`
+- `rpm_knn4 + learned midband` 多随机种子稳定性复核：`Docs/experiments/rpm_learned_midband_multiseed_stability_check_2026-04-07.md`
 
 ## 7. 关键工程约定
 

@@ -95,6 +95,37 @@
 - `is_labeled` 由程序派生，不在 manifest 手填
 - `file_name`、`file_path` 由程序派生，不在 manifest 手填
 
+### 2.4 `data/added/`
+
+- 状态：`current`
+- 首次确认：`2026-04-07`
+- 最近复核：`2026-04-07`
+
+用途：
+
+- 暂存 `2026-04-06` 新补充的 `4` 个宽表工况
+- 在正式复核与主线合并前，与 `data/final/` 分离管理
+
+当前组成：
+
+- `data/added/datasets/`
+  - 保留补充工况的原始文件名
+- `data/added/standardized_datasets/`
+  - 保存按 `工况{ID}.csv` 复制的标准化副本
+- `data/added/dataset_manifest.csv`
+  - 保存 `case_id=21-24` 的人工元数据
+
+当前映射：
+
+- `工况21.csv`
+  - 对应 `24-3补充工况.csv`
+- `工况22.csv`
+  - 对应 `24-3补充工况2.csv`
+- `工况23.csv`
+  - 对应 `24-4补充工况.csv`
+- `工况24.csv`
+  - 对应 `24-4补充工况2.csv`
+
 ## 3. 当前工况资产
 
 - 状态：`current`

@@ -181,5 +181,29 @@ uv run python src/windNotFound/run_eval_video_rpm.py --task config/test.yaml --s
   - 输出 `outputs/try/025_tinytcn_boundary_error_check/`
 - `src/try/026_tinytcn_priority1_quickcheck/`
   - 输出 `outputs/try/026_tinytcn_priority1_quickcheck/`
+- `src/try/027_dualstream_tinytcn_quickcheck/`
+  - 输出 `outputs/try/027_dualstream_tinytcn_quickcheck/`
+- `src/try/028_input_channel_attention_tinytcn_quickcheck/`
+  - 输出 `outputs/try/028_input_channel_attention_tinytcn_quickcheck/`
+- `src/try/029_postconv_channel_attention_tinytcn_quickcheck/`
+  - 输出 `outputs/try/029_postconv_channel_attention_tinytcn_quickcheck/`
+- `src/try/030_case_mechanism_clustering/`
+  - 输出 `outputs/try/030_case_mechanism_clustering/`
+- `src/try/031_case_error_mode_clustering/`
+  - 输出 `outputs/try/031_case_error_mode_clustering/`
+- `src/try/032_cluster_generalization_quickcheck/`
+  - 输出 `outputs/try/032_cluster_generalization_quickcheck/`
+- `src/try/033_label_sanity_check_excluding_hard_cases/`
+  - 输出 `outputs/try/033_label_sanity_check_excluding_hard_cases/`
+- `src/try/034_added_validation_label_check/`
+  - 输出 `outputs/try/034_added_validation_label_check/`
+- `src/try/035_added_validation_with_full_final_pool/`
+  - 输出 `outputs/try/035_added_validation_with_full_final_pool/`
+- `src/try/029_postconv_channel_attention_tinytcn_quickcheck/`
+  - 输出 `outputs/try/029_postconv_channel_attention_tinytcn_quickcheck/`
+- `src/try/041_rpm_vs_learned_midband_check/`
+  - 输出 `outputs/try/041_rpm_vs_learned_midband_check/`
+- `src/try/042_rpm_learned_midband_multiseed_stability_check/`
+  - 输出 `outputs/try/042_rpm_learned_midband_multiseed_stability_check/`
 
 如果你需要看路线规划、重构想法、方法拆解或详细风险分析，直接阅读 `Docs/`。
