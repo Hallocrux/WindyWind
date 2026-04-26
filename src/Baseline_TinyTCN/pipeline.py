@@ -1,33 +1,21 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TRY009_ROOT = REPO_ROOT / "src" / "try" / "009_phase1_feature_groups"
-TRY012_ROOT = REPO_ROOT / "src" / "try" / "012_phase3_end_to_end_shortlist"
-TRY013_ROOT = REPO_ROOT / "src" / "try" / "013_phase3_cnn_tcn_smoke"
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-if str(TRY009_ROOT) not in sys.path:
-    sys.path.insert(0, str(TRY009_ROOT))
-if str(TRY012_ROOT) not in sys.path:
-    sys.path.insert(0, str(TRY012_ROOT))
-if str(TRY013_ROOT) not in sys.path:
-    sys.path.insert(0, str(TRY013_ROOT))
 
 from src.current.data_loading import get_common_signal_columns, load_clean_signal_frame, scan_dataset_records
 from src.current.features import WindowConfig
 
-from phase3_cnn_tcn_lib import (
+from .models import (
     TorchTrainConfig,
-    build_raw_window_dataset,
     evaluate_torch_model_loco,
     predict_torch_model_unlabeled,
     summarize_predictions,
 )
+from .raw_dataset import build_raw_window_dataset
 
 OUTPUT_DIR = REPO_ROOT / "outputs" / "Baseline_TinyTCN"
 

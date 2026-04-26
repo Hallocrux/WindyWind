@@ -1,6 +1,8 @@
 # Baseline TinyTCN
 
-这个目录固化 `2026-04-05` 当前最强的第三阶段候选 baseline：
+这个目录固化 `2026-04-05` 当前最强的第三阶段候选 baseline。
+
+- `2026-04-10` 起，`src/Baseline_TinyTCN/` 已独立收口，不再依赖 `src/try/` 下的探索代码。
 
 - 模型：`TinyTCN`
 - 数据口径：

@@ -24,6 +24,12 @@
   - 用 YAML 定义待标注帧
   - 以 `jsonl` 追加写入标注结果
   - 基于 `center -> blade_1` 角度直接拟合 selector 级 RPM
+- 模态识别模块：
+  - 在 `src/modal_parameter_identification/` 中提供独立的模态参数识别入口
+  - 复用正式清洗逻辑，输出 `PSD / CSD / coherence / FDD / SSI-COV`
+  - 默认输出 `strain` 与 `acc_y` 两套 `5` 测点离散振型
+  - 支持工况级 `rpm` 与外部同步 rpm 时程两种谐波处理入口
+  - 支持按 `1D` 塔身折线导出振型动画 `MP4 / GIF`
 
 ## 表格实验怎么运行
 
@@ -161,6 +167,50 @@ uv run python src/windNotFound/run_fit_rpm.py --task config/test.yaml
 uv run python src/windNotFound/run_eval_video_rpm.py --task config/test.yaml --selector-index 0
 ```
 
+## 模态参数模块怎么运行
+
+默认运行：
+
+```bash
+uv run python -m src.modal_parameter_identification
+```
+
+只跑部分工况：
+
+```bash
+uv run python -m src.modal_parameter_identification --case-ids 1 10 17
+```
+
+显式导出振型动画：
+
+```bash
+uv run python -m src.modal_parameter_identification \
+  --case-ids 1 10 17 \
+  --save-mode-shape-animation \
+  --animation-format gif
+```
+
+当前默认输出位置：
+
+- `outputs/modal_parameter_identification/case_modal_summary.csv`
+- `outputs/modal_parameter_identification/window_modal_estimates.csv`
+- `outputs/modal_parameter_identification/harmonic_mask_table.csv`
+- `outputs/modal_parameter_identification/stabilization_poles.csv`
+- `outputs/modal_parameter_identification/stability_statistics.csv`
+- `outputs/modal_parameter_identification/strain_mode_shapes.csv`
+- `outputs/modal_parameter_identification/accy_mode_shapes.csv`
+- `outputs/modal_parameter_identification/case_*_modal_overview.png`
+- `outputs/modal_parameter_identification/case_*_mode_shape_comparison.png`
+- `outputs/modal_parameter_identification/case_*_strain_mode_shape_animation.mp4|gif`
+- `outputs/modal_parameter_identification/case_*_accy_mode_shape_animation.mp4|gif`
+
+当前已确认的限制：
+
+- 当前默认阻尼比是基于奇异值峰宽的 `EFDD-like` 工程近似，不应直接当成最终高精度阻尼结论。
+- 当前默认加速度振型固定使用 `AccY`，`AccX / AccZ` 仅保留在诊断层。
+- 当前仓库内未附带 FE 参考文件示例；若需要 FE 对比，需额外提供符合约定的 CSV。
+- 振型动画当前表达的是标准化振型的简谐播放，不代表真实结构位移幅值。
+
 ## 已完成探索入口
 
 - `src/try/001_fft_frequency_plot/`
@@ -205,5 +255,12 @@ uv run python src/windNotFound/run_eval_video_rpm.py --task config/test.yaml --s
   - 输出 `outputs/try/041_rpm_vs_learned_midband_check/`
 - `src/try/042_rpm_learned_midband_multiseed_stability_check/`
   - 输出 `outputs/try/042_rpm_learned_midband_multiseed_stability_check/`
-
+- `src/try/064_added_sota_added2_replay/`
+  - 输出 `outputs/try/064_added_sota_added2_replay/`
+- `src/try/045_added_in_training_loco_quickcheck/`
+  - 输出 `outputs/try/045_added_in_training_loco_quickcheck/`
+- `src/try/084_competition_test_modal_identification/`
+  - 输出 `outputs/try/084_competition_test_modal_identification/`
+- `src/try/089_noncausal_cnn_encoder_ablation/`
+  - 输出 `outputs/try/089_noncausal_cnn_encoder_ablation/`
 如果你需要看路线规划、重构想法、方法拆解或详细风险分析，直接阅读 `Docs/`。
